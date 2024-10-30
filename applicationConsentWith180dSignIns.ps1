@@ -9,6 +9,7 @@ Connect-AzAccount -Tenant $tenantId
 set-AzContext $subscription
 $workspace = Get-AzOperationalInsightsWorkspace -ResourceGroupName $resourceGroupName -Name $logAnalyticsWorkspace
 
+# Number of sign ins per app by service principals
 $kqlQuery = '
 AADServicePrincipalSignInLogs
 | where TimeGenerated > ago(180d)
@@ -17,6 +18,8 @@ AADServicePrincipalSignInLogs
 '
 $AADServicePrincipalSignInLogs = Invoke-AzOperationalInsightsQuery -Workspace $Workspace -Query $kqlQuery
 
+# Number of sign ins by service principals themselves.
+# This will count sign ins by service principals twice, but its the only way I have figured out to get activity for managed identities themselves.
 $kqlQuery = '
 AADServicePrincipalSignInLogs
 | where TimeGenerated > ago(180d)
@@ -25,6 +28,7 @@ AADServicePrincipalSignInLogs
 '
 $AADServicePrincipalSignInLogsActor = Invoke-AzOperationalInsightsQuery -Workspace $Workspace -Query $kqlQuery
 
+# Non-interactive sign ins. Probably the least valuable data as it is almost always included in the sign in logs.
 $kqlQuery = '
 AADNonInteractiveUserSignInLogs
 | where TimeGenerated > ago(180d)
@@ -33,6 +37,7 @@ AADNonInteractiveUserSignInLogs
 '
 $AADNonInteractiveUserSignInLogs = Invoke-AzOperationalInsightsQuery -Workspace $Workspace -Query $kqlQuery
 
+# Number of sign ins per app by a managed identity
 $kqlQuery = '
 AADManagedIdentitySignInLogs
 | where TimeGenerated > ago(180d)
@@ -41,6 +46,17 @@ AADManagedIdentitySignInLogs
 '
 $AADManagedIdentitySignInLogs = Invoke-AzOperationalInsightsQuery -Workspace $Workspace -Query $kqlQuery
 
+# Number of sign ins per app by managed identity themselves.
+# Unsure if this data is actually valuable, but it doesn't hurt to include it for this specific usecase.
+$kqlQuery = '
+AADManagedIdentitySignInLogs
+| where TimeGenerated > ago(180d)
+| where ResultType == 0
+| summarize count() by ServicePrincipalId
+'
+$AADManagedIdentitySignInLogsActor = Invoke-AzOperationalInsightsQuery -Workspace $Workspace -Query $kqlQuery
+
+# Normal interactive sign ins
 $kqlQuery = '
 SigninLogs
 | where TimeGenerated > ago(180d)
@@ -92,6 +108,15 @@ $AADManagedIdentitySignInLogs.results | ForEach-Object {
     }
     else {
         $signinlogshash.Add($_."AppId",[int]$_."count_")
+    }
+}
+
+$AADManagedIdentitySignInLogsActor.results | ForEach-Object {
+    if($signinlogshash[$_."ServicePrincipalId"]) {
+        $signinlogshash[$_."ServicePrincipalId"] += [int]$_."count_"
+    }
+    else {
+        $signinlogshash.Add($_."ServicePrincipalId",[int]$_."count_")
     }
 }
 
