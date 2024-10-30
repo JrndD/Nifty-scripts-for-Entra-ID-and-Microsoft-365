@@ -18,6 +18,14 @@ AADServicePrincipalSignInLogs
 $AADServicePrincipalSignInLogs = Invoke-AzOperationalInsightsQuery -Workspace $Workspace -Query $kqlQuery
 
 $kqlQuery = '
+AADServicePrincipalSignInLogs
+| where TimeGenerated > ago(180d)
+| where ResultType == 0
+| summarize count() by ServicePrincipalId
+'
+$AADServicePrincipalSignInLogsActor = Invoke-AzOperationalInsightsQuery -Workspace $Workspace -Query $kqlQuery
+
+$kqlQuery = '
 AADNonInteractiveUserSignInLogs
 | where TimeGenerated > ago(180d)
 | where ResultType == 0
@@ -57,6 +65,15 @@ $AADServicePrincipalSignInLogs.results | ForEach-Object {
     }
     else {
         $signinlogshash.Add($_."AppId",[int]$_."count_")
+    }
+}
+
+$AADServicePrincipalSignInLogsActor.results | ForEach-Object {
+    if($signinlogshash[$_."ServicePrincipalId"]) {
+        $signinlogshash[$_."ServicePrincipalId"] += [int]$_."count_"
+    }
+    else {
+        $signinlogshash.Add($_."ServicePrincipalId",[int]$_."count_")
     }
 }
 
